@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gl-matrix/2.8.1/gl-matrix-min.js"
+          integrity="sha512-zhHQR0/H5SEBL3Wn6yYSaTTZej12z0hVZKOv3TwCUXT1z5qeqGcXJLLrbERYRScEDDpYIJhPC1fk31gqR783iQ=="
+          crossorigin="anonymous" defer>
+  </script>
+  <title>Title</title>
+</head>
+<style>
+
+</style>
+<body>
+<canvas id="c" style="
+  width: 100vw;
+  height: 100vh;
+  display: block;"></canvas>
+</body>
+<script src="https://webglfundamentals.org/webgl/resources/webgl-utils.js"></script>
+<script id="vertex-shader-2d" type="notjs">
+  // attribute는 buffer에서 데이터를 받음
+  // x와 y만 사용해 vec4에서 vec2로 바꿨지만 이는 좋지 않음
+  // 어짜피 행렬 계산을 사용하려면 vec4로 바꿔야하기에 처음부터 vec4로 작업하면
+  // 추후에 vec2를 vec4로 변경해야하는 과정을 거치지 않아도 됌
+  // 이는 컴퓨터의 성능을 높이기 위함
+  attribute vec2 a_position;
+
+  uniform vec2 u_resolution;
+
+  void main() {
+    // 위치를 픽셀에서 0.0과 1.0사이로 변환
+    vec2 zeroToOne = a_position / u_resolution;
+
+    // 0->1에서 0->2로 변환
+    vec2 zeroToTwo = zeroToOne * 2.0;
+
+    // 0->2에서 -1->+1로 변환 (clip space)
+    vec2 clipSpace = zeroToTwo - 1.0;
+
+    gl_Position = vec4(clipSpace * vec2(1, -1), 0, 1);
+  }
+
+</script>
+<script id="fragment-shader-2d" type="notjs">
+  // Fragment shader는 기본 정밀도를 가지고 있지 않으므로 하나를 선택해야 합니다.
+  // mediump은 좋은 기본값으로 "중간 정밀도"를 의미합니다.
+  precision mediump float;
+
+  void main() {
+    // gl_FragColor는 fragment shader가 설정을 담당하는 특수 변수
+    gl_FragColor = vec4(1, 0, 0.5, 1); // 붉은 보라색 반환 -> 채널당 8bit 이기에 [255, 0, 127, 255]를 뜻함
+  }
+
+</script>
+<script>
+  "use strict";
+
+  function createShader(gl, type, source) {
+
+    var shader = gl.createShader(type);
+
+    gl.shaderSource(shader, source);
+    gl.compileShader(shader);
+
+    var success = gl.getShaderParameter(shader, gl.COMPILE_STATUS);
+
+    if (success) {
+      //성공적으로 쉐이더 생성 되었을 경우 쉐이더 반환
+      return shader;
+    } else {
+      //생성 실패일 경우 쉐이더 삭제
+      console.log(gl.getShaderInfoLog(shader));
+      gl.deleteShader(shader);
+    }
+  }
+
+  function createProgram(gl, vertexShader, fragmentShader) {
+    var program = gl.createProgram();
+    gl.attachShader(program, vertexShader);
+    gl.attachShader(program, fragmentShader);
+    gl.linkProgram(program);
+
+    var success = gl.getProgramParameter(program, gl.LINK_STATUS);
+    if (success) {
+      return program;
+    } else {
+      console.log(gl.getShaderInfoLog(program));
+      gl.deleteProgram(program);
+    }
+  }
+
+  function main() {
+    <!--TODO 초기화 Start-->
+    var canvas = document.querySelector("#c");
+    var gl = canvas.getContext("webgl");
+    if(!gl){
+      console.log("gl is blank..");
+      return;
+    }
+    var vertexShaderSource = document.querySelector("#vertex-shader-2d").text;
+    var fragmentShaderSource = document.querySelector("#fragment-shader-2d").text;
+
+    var vertexShader = createShader(gl, gl.VERTEX_SHADER, vertexShaderSource);
+    var fragmentShader = createShader(gl, gl.FRAGMENT_SHADER, fragmentShaderSource);
+
+    var program = createProgram(gl, vertexShader, fragmentShader);
+
+    var positionAttributeLocation = gl.getAttribLocation(program, "a_position");
+
+    var resolutionUniformLocation = gl.getUniformLocation(program, "u_resolution");
+
+    var positionBuffer = gl.createBuffer();
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+
+    // custom1의 positions 는 클립 좌표계의 값이였지만 현재는 픽셀로 변경
+    // 이는 vertex 쉐이더에서 클립 좌표계로 변경하도록 짯기 때문
+    // 픽셀 기준 좌표 데이터
+    var positions = [
+      10, 20,
+      80, 20,
+      10, 30,
+      10, 30,
+      80, 20,
+      80, 30,
+    ];
+
+    gl.bufferData(
+      gl.ARRAY_BUFFER,
+      new Float32Array(positions),
+      gl.STATIC_DRAW
+    );
+    <!--TODO 초기화 End-->
+
+    <!-- TODO 렌더링 Start -->
+    //캔버스 크기만큼 조정
+    webglUtils.resizeCanvasToDisplaySize(gl.canvas);
+
+    //clipe space -> screen space
+    //즉 gl_position의 클립 좌표계의 값 -1 ~ 1의 값을 캔버스 크기인 0 ~ canvas.width 의 크기로 매핑시킴
+    gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+
+    gl.useProgram(program);
+
+    gl.enableVertexAttribArray(positionAttributeLocation);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+
+    var size = 2;
+    var type = gl.FLOAT;
+    var normalize = false;
+    var stride = 0;
+    var offset = 0;
+    gl.vertexAttribPointer(positionAttributeLocation, size, type, normalize, stride, offset);
+
+    // 해상도 설정
+    gl.uniform2f(resolutionUniformLocation, gl.canvas.width, gl.canvas.height);
+
+    // GLSL 프로그램 실행
+    // 단순히 positionBuffer 값을 gl_position에 복사해서 그림
+    var primitiveType = gl.TRIANGLES; // vertex shader 가 3번 실행될 때 마다 삼각형을 그림
+    var offset = 0;
+    var count = 6; // vertex shader 실행 횟수
+    gl.drawArrays(primitiveType, offset, count);
+    <!-- TODO 렌더링 End -->
+  }
+
+  main();
+</script>
+</html>
